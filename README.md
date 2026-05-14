@@ -14,9 +14,9 @@ A small distributed database demo built with Go, MySQL, and HTTP APIs. The proje
 ## Project Structure
 
 ```text
-cmd/master   - master node entrypoint
-cmd/slave1   - slave 1 entrypoint
-cmd/slave2   - slave 2 entrypoint
+nodes/master   - master node entrypoint
+nodes/slave1   - slave 1 entrypoint
+nodes/slave2   - slave 2 entrypoint
 internal/api - HTTP handlers
 internal/storage - MySQL access
 internal/replication - replication logic
@@ -59,15 +59,15 @@ SLAVE_URLS=http://localhost:8081,http://localhost:8082
 Start each node in a separate PowerShell terminal:
 
 ```powershell
-go run .\cmd\master
+go run .\nodes\master
 ```
 
 ```powershell
-go run .\cmd\slave1
+go run .\nodes\slave1
 ```
 
 ```powershell
-go run .\cmd\slave2
+go run .\nodes\slave2
 ```
 
 Default URLs:
