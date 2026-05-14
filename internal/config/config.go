@@ -12,6 +12,7 @@ type NodeConfig struct {
 	Role                string
 	Host                string
 	Port                string
+	MasterURL           string
 	MySQLDSN            string
 	DBName              string
 	SlaveURLs           []string
@@ -26,10 +27,11 @@ func LoadMasterConfig() NodeConfig {
 		Role:                "master",
 		Host:                envOrDefault("MASTER_HOST", "localhost"),
 		Port:                envOrDefault("MASTER_PORT", "8080"),
+		MasterURL:           envOrDefault("MASTER_URL", "http://"+envOrDefault("MASTER_HOST", "localhost")+":"+envOrDefault("MASTER_PORT", "8080")),
 		MySQLDSN:            dsn,
 		DBName:              databaseNameFromDSN(dsn),
 		SlaveURLs:           csvEnv("SLAVE_URLS"),
-		HealthCheckInterval: 5*time.Second,
+		HealthCheckInterval: 5 * time.Second,
 	}
 }
 
@@ -38,11 +40,12 @@ func LoadSlaveConfig(role, defaultPort, dsnEnv, defaultDSN string) NodeConfig {
 	dsn := envOrDefault(dsnEnv, defaultDSN)
 
 	return NodeConfig{
-		Role:     role,
-		Host:     envOrDefault(strings.ToUpper(role)+"_HOST", "localhost"),
-		Port:     envOrDefault(strings.ToUpper(role)+"_PORT", defaultPort),
-		MySQLDSN: dsn,
-		DBName:   databaseNameFromDSN(dsn),
+		Role:      role,
+		Host:      envOrDefault(strings.ToUpper(role)+"_HOST", "localhost"),
+		Port:      envOrDefault(strings.ToUpper(role)+"_PORT", defaultPort),
+		MasterURL: envOrDefault("MASTER_URL", "http://"+envOrDefault("MASTER_HOST", "localhost")+":"+envOrDefault("MASTER_PORT", "8080")),
+		MySQLDSN:  dsn,
+		DBName:    databaseNameFromDSN(dsn),
 	}
 }
 

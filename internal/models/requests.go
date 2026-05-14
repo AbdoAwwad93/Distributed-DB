@@ -15,6 +15,41 @@ type QueryRequest struct {
 	Query string `json:"query"`
 }
 
+type ApprovalSubmissionRequest struct {
+	Method      string `json:"method"`
+	Path        string `json:"path"`
+	RawQuery    string `json:"rawQuery,omitempty"`
+	Body        []byte `json:"body,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
+	RequestedBy string `json:"requestedBy"`
+	RequestRole string `json:"requestRole"`
+}
+
+type ApprovalDecisionRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+type ApprovalRequest struct {
+	ID          string    `json:"id"`
+	Method      string    `json:"method"`
+	Path        string    `json:"path"`
+	RawQuery    string    `json:"rawQuery,omitempty"`
+	Body        string    `json:"body,omitempty"`
+	ContentType string    `json:"contentType,omitempty"`
+	RequestedBy string    `json:"requestedBy"`
+	RequestRole string    `json:"requestRole"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	DecisionBy  string    `json:"decisionBy,omitempty"`
+	Reason      string    `json:"reason,omitempty"`
+}
+
+type ApprovalListResponse struct {
+	Node     string            `json:"node"`
+	Requests []ApprovalRequest `json:"requests"`
+}
+
 type MessageResponse struct {
 	Message string `json:"message"`
 }

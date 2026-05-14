@@ -7,7 +7,7 @@ A small distributed database demo built with Go, MySQL, and HTTP APIs. The proje
 - Master and slave nodes expose HTTP APIs
 - Master can replicate writes to slave nodes
 - Only the master can run write operations such as `CREATE TABLE`, `INSERT`, `UPDATE`, `DELETE`, `DROP TABLE`, and `DROP DATABASE`
-- Slave nodes are read-only for client operations and should be used for `SELECT` requests
+- Slave nodes submit master-only requests to the master for approval
 - `DROP DATABASE` is restricted to the master node
 - Basic health checks and cluster status endpoints
 - Demo script for a quick end-to-end walkthrough
@@ -37,6 +37,7 @@ scripts/demo.ps1 - demo script
 2. Copy `.env.example` to `.env`.
 3. Update the MySQL password in the DSNs inside `.env`.
 4. Make sure MySQL is running on the host and port used in the DSNs.
+5. Set `MASTER_URL` so slave nodes know where to forward master-only requests.
 
 Example `.env` values:
 
@@ -47,6 +48,7 @@ SLAVE2_MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_slave2
 
 MASTER_HOST=localhost
 MASTER_PORT=8080
+MASTER_URL=http://localhost:8080
 SLAVE1_HOST=localhost
 SLAVE1_PORT=8081
 SLAVE2_HOST=localhost
@@ -197,10 +199,51 @@ Invoke-RestMethod -Method Post http://localhost:8080/replication/retry
 ## Behavior Notes
 
 - All client write operations must be sent to the master node.
+- If a client sends a master-only operation to a slave, the slave submits it to `MASTER_URL` as a pending approval request.
+- The master must explicitly approve or reject that request before anything is executed.
 - The master replicates supported writes to the slave nodes.
 - Slave nodes are intended for read operations such as `SELECT`.
 - `DROP DATABASE` is master-only.
 - Slave nodes can be promoted with the `/promote` endpoint if needed.
+
+When a slave submits a master-only request:
+
+- the slave returns `202 Accepted` with the pending approval request
+- the master can list requests with `GET /approval-requests`
+- the master can approve with `PUT /approval-requests/{id}/approve`
+- the master can reject with `PUT /approval-requests/{id}/reject`
+
+## Approval Workflow Examples
+
+Submit a write to a slave:
+
+```powershell
+Invoke-RestMethod -Method Post http://localhost:8081/insert -ContentType "application/json" -Body (@{
+    query = "INSERT INTO demo_users(id, name, email, status) VALUES (5, 'Nora', 'nora@test.com', 'pending')"
+} | ConvertTo-Json)
+```
+
+List pending requests on the master:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/approval-requests
+```
+
+Approve a request on the master:
+
+```powershell
+Invoke-RestMethod -Method Put http://localhost:8080/approval-requests/approval-1/approve -ContentType "application/json" -Body (@{
+    reason = "approved by master"
+} | ConvertTo-Json)
+```
+
+Reject a request on the master:
+
+```powershell
+Invoke-RestMethod -Method Put http://localhost:8080/approval-requests/approval-1/reject -ContentType "application/json" -Body (@{
+    reason = "not allowed"
+} | ConvertTo-Json)
+```
 
 ## Example Promote Request
 

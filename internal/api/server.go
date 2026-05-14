@@ -1,11 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"distributed-db/internal/config"
 	"distributed-db/internal/models"
@@ -18,8 +24,28 @@ type Server struct {
 	mux         *http.ServeMux
 	store       *storage.Store
 	broadcaster *replication.Broadcaster
+	masterHTTP  *http.Client
+	approvalMu  sync.Mutex
+	approvals   map[string]*approvalRecord
+	approvalSeq int64
 	roleMu      sync.RWMutex
 	role        string
+}
+
+type approvalRecord struct {
+	ID          string
+	Method      string
+	Path        string
+	RawQuery    string
+	Body        []byte
+	ContentType string
+	RequestedBy string
+	RequestRole string
+	Status      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DecisionBy  string
+	Reason      string
 }
 
 type healthResponse struct {
@@ -45,12 +71,16 @@ func NewServer(cfg config.NodeConfig, store *storage.Store, broadcaster *replica
 		mux:         mux,
 		store:       store,
 		broadcaster: broadcaster,
+		masterHTTP:  &http.Client{Timeout: 10 * time.Second},
+		approvals:   make(map[string]*approvalRecord),
 		role:        cfg.Role,
 	}
 
 	mux.HandleFunc("/health", server.handleHealth)
 	mux.HandleFunc("/db/health", server.handleDBHealth)
 	mux.HandleFunc("/cluster/status", server.handleClusterStatus)
+	mux.HandleFunc("/approval-requests", server.handleApprovalRequests)
+	mux.HandleFunc("/approval-requests/", server.handleApprovalDecision)
 	mux.HandleFunc("/replication/retry", server.handleReplicationRetry)
 	mux.HandleFunc("/promote", server.handlePromote)
 	mux.HandleFunc("/create-table", server.handleCreateTable)
@@ -108,6 +138,9 @@ func (s *Server) handleReplicationRetry(w http.ResponseWriter, r *http.Request) 
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if s.submitApprovalRequest(w, r) {
+		return
+	}
 	if s.broadcaster == nil {
 		http.Error(w, "replication retry is only available on a master with slaves", http.StatusBadRequest)
 		return
@@ -132,8 +165,7 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if s.currentRole() != "master" {
-		http.Error(w, "table creation is only allowed on master", http.StatusForbidden)
+	if s.submitApprovalRequest(w, r) {
 		return
 	}
 
@@ -158,8 +190,7 @@ func (s *Server) handleDropTable(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if s.currentRole() != "master" {
-		http.Error(w, "table drop is only allowed on master", http.StatusForbidden)
+	if s.submitApprovalRequest(w, r) {
 		return
 	}
 
@@ -184,8 +215,7 @@ func (s *Server) handleDropDatabase(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if s.currentRole() != "master" {
-		http.Error(w, "database drop is only allowed on master", http.StatusForbidden)
+	if s.submitApprovalRequest(w, r) {
 		return
 	}
 
@@ -267,8 +297,7 @@ func (s *Server) handleWriteQuery(w http.ResponseWriter, r *http.Request, method
 	if !requireMethod(w, r, method) {
 		return
 	}
-	if s.currentRole() != "master" {
-		http.Error(w, "writes are only allowed on master", http.StatusForbidden)
+	if s.submitApprovalRequest(w, r) {
 		return
 	}
 
@@ -353,4 +382,340 @@ func isReplicationQuery(query string) bool {
 	}
 
 	return false
+}
+
+func (s *Server) handleApprovalRequests(w http.ResponseWriter, r *http.Request) {
+	if s.currentRole() != "master" {
+		http.Error(w, "approval requests are only managed on master", http.StatusForbidden)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		s.listApprovalRequests(w)
+	case http.MethodPost:
+		s.createApprovalRequest(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleApprovalDecision(w http.ResponseWriter, r *http.Request) {
+	if s.currentRole() != "master" {
+		http.Error(w, "approval decisions are only available on master", http.StatusForbidden)
+		return
+	}
+	if !requireMethod(w, r, http.MethodPut) {
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/approval-requests/")
+	path = strings.Trim(path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var decision models.ApprovalDecisionRequest
+	if r.ContentLength != 0 {
+		if !decodeJSON(w, r, &decision) {
+			return
+		}
+	}
+
+	switch parts[1] {
+	case "approve":
+		s.approveRequest(w, parts[0], decision.Reason)
+	case "reject":
+		s.rejectRequest(w, parts[0], decision.Reason)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (s *Server) listApprovalRequests(w http.ResponseWriter) {
+	s.approvalMu.Lock()
+	requests := make([]models.ApprovalRequest, 0, len(s.approvals))
+	for _, record := range s.approvals {
+		requests = append(requests, record.toModel())
+	}
+	s.approvalMu.Unlock()
+
+	sort.Slice(requests, func(i, j int) bool {
+		if requests[i].CreatedAt.Equal(requests[j].CreatedAt) {
+			return requests[i].ID < requests[j].ID
+		}
+		return requests[i].CreatedAt.Before(requests[j].CreatedAt)
+	})
+
+	writeJSON(w, http.StatusOK, models.ApprovalListResponse{
+		Node:     s.currentRole(),
+		Requests: requests,
+	})
+}
+
+func (s *Server) createApprovalRequest(w http.ResponseWriter, r *http.Request) {
+	var submission models.ApprovalSubmissionRequest
+	if !decodeJSON(w, r, &submission) {
+		return
+	}
+	if submission.Method == "" || submission.Path == "" || submission.RequestedBy == "" {
+		http.Error(w, "method, path, and requestedBy are required", http.StatusBadRequest)
+		return
+	}
+	if !isMasterManagedPath(submission.Path) {
+		http.Error(w, "path is not eligible for master approval", http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now()
+	record := &approvalRecord{
+		ID:          s.nextApprovalID(),
+		Method:      submission.Method,
+		Path:        submission.Path,
+		RawQuery:    submission.RawQuery,
+		Body:        append([]byte(nil), submission.Body...),
+		ContentType: submission.ContentType,
+		RequestedBy: submission.RequestedBy,
+		RequestRole: submission.RequestRole,
+		Status:      "pending",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	s.approvalMu.Lock()
+	s.approvals[record.ID] = record
+	s.approvalMu.Unlock()
+
+	writeJSON(w, http.StatusAccepted, models.ApprovalRequest{
+		ID:          record.ID,
+		Method:      record.Method,
+		Path:        record.Path,
+		RawQuery:    record.RawQuery,
+		Body:        string(record.Body),
+		ContentType: record.ContentType,
+		RequestedBy: record.RequestedBy,
+		RequestRole: record.RequestRole,
+		Status:      record.Status,
+		CreatedAt:   record.CreatedAt,
+		UpdatedAt:   record.UpdatedAt,
+	})
+}
+
+func (s *Server) approveRequest(w http.ResponseWriter, id, reason string) {
+	record, ok := s.getApprovalRecord(id)
+	if !ok {
+		http.Error(w, "approval request not found", http.StatusNotFound)
+		return
+	}
+	if record.Status != "pending" {
+		http.Error(w, "approval request is not pending", http.StatusConflict)
+		return
+	}
+
+	response := httptest.NewRecorder()
+	req := httptest.NewRequest(record.Method, record.Path, bytes.NewReader(record.Body))
+	req.Header.Set("Content-Type", record.ContentType)
+	if record.RawQuery != "" {
+		req.URL.RawQuery = record.RawQuery
+		req.RequestURI = record.Path + "?" + record.RawQuery
+	}
+
+	s.mux.ServeHTTP(response, req)
+	result := response.Result()
+	defer result.Body.Close()
+	body, _ := io.ReadAll(result.Body)
+
+	s.approvalMu.Lock()
+	defer s.approvalMu.Unlock()
+	current := s.approvals[id]
+	if current == nil {
+		http.Error(w, "approval request not found", http.StatusNotFound)
+		return
+	}
+	if current.Status != "pending" {
+		http.Error(w, "approval request is not pending", http.StatusConflict)
+		return
+	}
+
+	current.UpdatedAt = time.Now()
+	current.DecisionBy = s.currentRole()
+	if reason != "" {
+		current.Reason = reason
+	}
+
+	if result.StatusCode >= 200 && result.StatusCode < 300 {
+		current.Status = "approved"
+		writeJSON(w, http.StatusOK, map[string]any{
+			"message":  "request approved and executed",
+			"request":  current.toModel(),
+			"response": parseResponseBody(body),
+		})
+		return
+	}
+
+	current.Status = "rejected"
+	if current.Reason == "" {
+		current.Reason = strings.TrimSpace(string(body))
+	}
+	writeJSON(w, http.StatusBadRequest, map[string]any{
+		"message":  "request approval failed during execution",
+		"request":  current.toModel(),
+		"response": parseResponseBody(body),
+	})
+}
+
+func (s *Server) rejectRequest(w http.ResponseWriter, id, reason string) {
+	s.approvalMu.Lock()
+	defer s.approvalMu.Unlock()
+
+	record := s.approvals[id]
+	if record == nil {
+		http.Error(w, "approval request not found", http.StatusNotFound)
+		return
+	}
+	if record.Status != "pending" {
+		http.Error(w, "approval request is not pending", http.StatusConflict)
+		return
+	}
+
+	record.Status = "rejected"
+	record.UpdatedAt = time.Now()
+	record.DecisionBy = s.currentRole()
+	record.Reason = reason
+	if record.Reason == "" {
+		record.Reason = "rejected by master"
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"message": "request rejected",
+		"request": record.toModel(),
+	})
+}
+
+func (s *Server) submitApprovalRequest(w http.ResponseWriter, r *http.Request) bool {
+	if s.currentRole() == "master" {
+		return false
+	}
+	if s.config.MasterURL == "" {
+		http.Error(w, "master URL is not configured for this slave", http.StatusServiceUnavailable)
+		return true
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return true
+	}
+	defer r.Body.Close()
+
+	payload, err := json.Marshal(models.ApprovalSubmissionRequest{
+		Method:      r.Method,
+		Path:        r.URL.Path,
+		RawQuery:    r.URL.RawQuery,
+		Body:        body,
+		ContentType: r.Header.Get("Content-Type"),
+		RequestedBy: s.config.Address(),
+		RequestRole: s.currentRole(),
+	})
+	if err != nil {
+		http.Error(w, "failed to create approval payload", http.StatusInternalServerError)
+		return true
+	}
+
+	masterURL := strings.TrimRight(s.config.MasterURL, "/") + "/approval-requests"
+	forwardReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, masterURL, bytes.NewReader(payload))
+	if err != nil {
+		http.Error(w, "failed to create approval request", http.StatusInternalServerError)
+		return true
+	}
+	forwardReq.Header.Set("Content-Type", "application/json")
+
+	response, err := s.masterHTTP.Do(forwardReq)
+	if err != nil {
+		http.Error(w, "failed to contact master: "+err.Error(), http.StatusBadGateway)
+		return true
+	}
+	defer response.Body.Close()
+
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		http.Error(w, "failed to read master response", http.StatusBadGateway)
+		return true
+	}
+
+	if contentType := response.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.Header().Set("X-Master-Decision", "pending")
+	w.Header().Set("X-Master-Node", strings.TrimRight(s.config.MasterURL, "/"))
+	w.WriteHeader(response.StatusCode)
+	_, _ = w.Write(responseBody)
+	return true
+}
+
+func (s *Server) nextApprovalID() string {
+	s.approvalMu.Lock()
+	defer s.approvalMu.Unlock()
+	s.approvalSeq++
+	return "approval-" + strconv.FormatInt(s.approvalSeq, 10)
+}
+
+func (s *Server) getApprovalRecord(id string) (*approvalRecord, bool) {
+	s.approvalMu.Lock()
+	defer s.approvalMu.Unlock()
+
+	record := s.approvals[id]
+	if record == nil {
+		return nil, false
+	}
+
+	copyRecord := *record
+	copyRecord.Body = append([]byte(nil), record.Body...)
+	return &copyRecord, true
+}
+
+func (r *approvalRecord) toModel() models.ApprovalRequest {
+	return models.ApprovalRequest{
+		ID:          r.ID,
+		Method:      r.Method,
+		Path:        r.Path,
+		RawQuery:    r.RawQuery,
+		Body:        string(r.Body),
+		ContentType: r.ContentType,
+		RequestedBy: r.RequestedBy,
+		RequestRole: r.RequestRole,
+		Status:      r.Status,
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
+		DecisionBy:  r.DecisionBy,
+		Reason:      r.Reason,
+	}
+}
+
+func isMasterManagedPath(path string) bool {
+	allowed := map[string]bool{
+		"/replication/retry": true,
+		"/create-table":      true,
+		"/drop-table":        true,
+		"/drop-database":     true,
+		"/insert":            true,
+		"/update":            true,
+		"/delete":            true,
+	}
+	return allowed[path]
+}
+
+func parseResponseBody(body []byte) any {
+	if len(body) == 0 {
+		return map[string]any{}
+	}
+
+	var decoded any
+	if err := json.Unmarshal(body, &decoded); err == nil {
+		return decoded
+	}
+
+	return strings.TrimSpace(string(body))
 }
