@@ -5,12 +5,11 @@ import (
 
 	"distributed-db/internal/api"
 	"distributed-db/internal/config"
-	"distributed-db/internal/replication"
 	"distributed-db/internal/storage"
 )
 
 func main() {
-	cfg := config.LoadMasterConfig()
+	cfg := config.LoadSlaveConfig("slave2", "8082", "SLAVE2_MYSQL_DSN", "root:@tcp(localhost:3306)/distributed_slave2?parseTime=true")
 
 	store, err := storage.NewStore(cfg.MySQLDSN)
 	if err != nil {
@@ -18,8 +17,7 @@ func main() {
 	}
 	defer store.Close()
 
-	broadcaster := replication.NewBroadcaster(cfg.SlaveURLs)
-	server := api.NewServer(cfg, store, broadcaster)
+	server := api.NewServer(cfg, store, nil)
 
 	log.Printf("starting %s node on %s", cfg.Role, cfg.Address())
 	if err := server.Start(); err != nil {

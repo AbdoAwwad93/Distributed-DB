@@ -8,22 +8,36 @@ import (
 )
 
 type NodeConfig struct {
-	Role     string
-	Host     string
-	Port     string
-	MySQLDSN string
-	DBName   string
+	Role      string
+	Host      string
+	Port      string
+	MySQLDSN  string
+	DBName    string
+	SlaveURLs []string
 }
 
 func LoadMasterConfig() NodeConfig {
 	LoadDotEnv(".env")
-
 	dsn := envOrDefault("MYSQL_DSN", "root:@tcp(localhost:3306)/distributed_master?parseTime=true")
 
 	return NodeConfig{
-		Role:     "master",
-		Host:     envOrDefault("MASTER_HOST", "localhost"),
-		Port:     envOrDefault("MASTER_PORT", "8080"),
+		Role:      "master",
+		Host:      envOrDefault("MASTER_HOST", "localhost"),
+		Port:      envOrDefault("MASTER_PORT", "8080"),
+		MySQLDSN:  dsn,
+		DBName:    databaseNameFromDSN(dsn),
+		SlaveURLs: csvEnv("SLAVE_URLS"),
+	}
+}
+
+func LoadSlaveConfig(role, defaultPort, dsnEnv, defaultDSN string) NodeConfig {
+	LoadDotEnv(".env")
+	dsn := envOrDefault(dsnEnv, defaultDSN)
+
+	return NodeConfig{
+		Role:     role,
+		Host:     envOrDefault(strings.ToUpper(role)+"_HOST", "localhost"),
+		Port:     envOrDefault(strings.ToUpper(role)+"_PORT", defaultPort),
 		MySQLDSN: dsn,
 		DBName:   databaseNameFromDSN(dsn),
 	}
@@ -67,6 +81,24 @@ func envOrDefault(key, fallback string) string {
 	}
 
 	return value
+}
+
+func csvEnv(key string) []string {
+	value := os.Getenv(key)
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+
+	return items
 }
 
 func databaseNameFromDSN(dsn string) string {
