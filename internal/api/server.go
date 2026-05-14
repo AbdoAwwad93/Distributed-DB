@@ -54,6 +54,7 @@ func NewServer(cfg config.NodeConfig, store *storage.Store, broadcaster *replica
 	mux.HandleFunc("/replication/retry", server.handleReplicationRetry)
 	mux.HandleFunc("/promote", server.handlePromote)
 	mux.HandleFunc("/create-table", server.handleCreateTable)
+	mux.HandleFunc("/drop-database", server.handleDropDatabase)
 	mux.HandleFunc("/insert", server.handleInsert)
 	mux.HandleFunc("/update", server.handleUpdate)
 	mux.HandleFunc("/delete", server.handleDelete)
@@ -148,6 +149,27 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, writeResponse{
 		Message:     "table created",
+		Replication: s.broadcastIfMaster(query),
+	})
+}
+
+func (s *Server) handleDropDatabase(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodDelete) {
+		return
+	}
+	if s.currentRole() != "master" {
+		http.Error(w, "database drop is only allowed on master", http.StatusForbidden)
+		return
+	}
+
+	query, err := s.store.DropDatabase(s.config.DBName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, writeResponse{
+		Message:     "database dropped",
 		Replication: s.broadcastIfMaster(query),
 	})
 }
@@ -296,7 +318,7 @@ func hasSQLPrefix(query, prefix string) bool {
 }
 
 func isReplicationQuery(query string) bool {
-	allowedPrefixes := []string{"CREATE TABLE", "INSERT", "UPDATE", "DELETE"}
+	allowedPrefixes := []string{"CREATE TABLE", "INSERT", "UPDATE", "DELETE", "DROP DATABASE"}
 	for _, prefix := range allowedPrefixes {
 		if hasSQLPrefix(query, prefix) {
 			return true

@@ -79,3 +79,9 @@ Manual retry for queued replication:
 ```powershell
 Invoke-RestMethod -Method Post http://localhost:8080/replication/retry
 ```
+
+Drop the master's configured database and replicate the drop to slaves:
+
+```powershell
+Invoke-RestMethod -Method Delete http://localhost:8080/drop-database
+```

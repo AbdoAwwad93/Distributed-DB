@@ -52,6 +52,16 @@ func (s *Store) CreateTable(table string, columns map[string]string) (string, er
 	return query, err
 }
 
+func (s *Store) DropDatabase(name string) (string, error) {
+	if !isValidIdentifier(name) {
+		return "", fmt.Errorf("invalid database name")
+	}
+
+	query := fmt.Sprintf("DROP DATABASE %s", quoteIdentifier(name))
+	_, err := s.db.Exec(query)
+	return query, err
+}
+
 func (s *Store) Exec(query string) error {
 	_, err := s.db.Exec(query)
 	return err
