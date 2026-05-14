@@ -3,3 +3,5 @@
 go.mod text eol=lf
 go.sum text eol=lf
 *.env.example text eol=lf
+*.md text eol=lf
+*.ps1 text eol=lf
