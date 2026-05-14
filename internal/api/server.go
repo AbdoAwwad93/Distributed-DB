@@ -132,6 +132,10 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if s.currentRole() != "master" {
+		http.Error(w, "table creation is only allowed on master", http.StatusForbidden)
+		return
+	}
 
 	var request models.CreateTableRequest
 	if !decodeJSON(w, r, &request) {
@@ -152,6 +156,10 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDropTable(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
+		return
+	}
+	if s.currentRole() != "master" {
+		http.Error(w, "table drop is only allowed on master", http.StatusForbidden)
 		return
 	}
 
@@ -257,6 +265,10 @@ func (s *Server) handleReplicate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleWriteQuery(w http.ResponseWriter, r *http.Request, method, prefix, message string) {
 	if !requireMethod(w, r, method) {
+		return
+	}
+	if s.currentRole() != "master" {
+		http.Error(w, "writes are only allowed on master", http.StatusForbidden)
 		return
 	}
 

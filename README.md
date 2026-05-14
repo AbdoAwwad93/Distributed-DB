@@ -1,12 +1,13 @@
 # Distributed Database System
 
-A small distributed database demo built with Go, MySQL, and HTTP APIs. The project runs one master node and two slave nodes, supports replication from the master to slaves, and allows all nodes to execute local table and row operations.
+A small distributed database demo built with Go, MySQL, and HTTP APIs. The project runs one master node and two slave nodes, supports replication from the master to slaves, and follows a master-write / slave-read model.
 
 ## Features
 
 - Master and slave nodes expose HTTP APIs
 - Master can replicate writes to slave nodes
-- All nodes can run local `SELECT`, `CREATE TABLE`, `INSERT`, `UPDATE`, `DELETE`, and `DROP TABLE`
+- Only the master can run write operations such as `CREATE TABLE`, `INSERT`, `UPDATE`, `DELETE`, `DROP TABLE`, and `DROP DATABASE`
+- Slave nodes are read-only for client operations and should be used for `SELECT` requests
 - `DROP DATABASE` is restricted to the master node
 - Basic health checks and cluster status endpoints
 - Demo script for a quick end-to-end walkthrough
@@ -126,7 +127,7 @@ Invoke-RestMethod http://localhost:8080/cluster/status
 
 ### Create Table
 
-Any node can create a local table:
+Create tables through the master:
 
 ```powershell
 Invoke-RestMethod -Method Post http://localhost:8080/create-table -ContentType "application/json" -Body (@{
@@ -174,7 +175,7 @@ Invoke-RestMethod "http://localhost:8081/select?query=$query"
 ### Drop Table
 
 ```powershell
-Invoke-RestMethod -Method Delete http://localhost:8081/drop-table -ContentType "application/json" -Body (@{
+Invoke-RestMethod -Method Delete http://localhost:8080/drop-table -ContentType "application/json" -Body (@{
     table = "demo_users"
 } | ConvertTo-Json)
 ```
@@ -195,9 +196,9 @@ Invoke-RestMethod -Method Post http://localhost:8080/replication/retry
 
 ## Behavior Notes
 
-- Writes sent to the master may be replicated to slaves.
-- Writes sent directly to a slave affect that slave locally and are not broadcast to other nodes.
-- `SELECT` can be executed on any node.
+- All client write operations must be sent to the master node.
+- The master replicates supported writes to the slave nodes.
+- Slave nodes are intended for read operations such as `SELECT`.
 - `DROP DATABASE` is master-only.
 - Slave nodes can be promoted with the `/promote` endpoint if needed.
 
