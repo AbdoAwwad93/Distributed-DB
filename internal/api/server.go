@@ -54,6 +54,7 @@ func NewServer(cfg config.NodeConfig, store *storage.Store, broadcaster *replica
 	mux.HandleFunc("/replication/retry", server.handleReplicationRetry)
 	mux.HandleFunc("/promote", server.handlePromote)
 	mux.HandleFunc("/create-table", server.handleCreateTable)
+	mux.HandleFunc("/drop-table", server.handleDropTable)
 	mux.HandleFunc("/drop-database", server.handleDropDatabase)
 	mux.HandleFunc("/insert", server.handleInsert)
 	mux.HandleFunc("/update", server.handleUpdate)
@@ -131,10 +132,6 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if s.currentRole() != "master" {
-		http.Error(w, "table creation is only allowed on master", http.StatusForbidden)
-		return
-	}
 
 	var request models.CreateTableRequest
 	if !decodeJSON(w, r, &request) {
@@ -149,6 +146,28 @@ func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, writeResponse{
 		Message:     "table created",
+		Replication: s.broadcastIfMaster(query),
+	})
+}
+
+func (s *Server) handleDropTable(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodDelete) {
+		return
+	}
+
+	var request models.DropTableRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+
+	query, err := s.store.DropTable(request.Table)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, writeResponse{
+		Message:     "table dropped",
 		Replication: s.broadcastIfMaster(query),
 	})
 }
@@ -240,10 +259,6 @@ func (s *Server) handleWriteQuery(w http.ResponseWriter, r *http.Request, method
 	if !requireMethod(w, r, method) {
 		return
 	}
-	if s.currentRole() != "master" {
-		http.Error(w, "writes are only allowed on master", http.StatusForbidden)
-		return
-	}
 
 	var request models.QueryRequest
 	if !decodeJSON(w, r, &request) {
@@ -318,7 +333,7 @@ func hasSQLPrefix(query, prefix string) bool {
 }
 
 func isReplicationQuery(query string) bool {
-	allowedPrefixes := []string{"CREATE TABLE", "INSERT", "UPDATE", "DELETE", "DROP DATABASE"}
+	allowedPrefixes := []string{"CREATE TABLE", "INSERT", "UPDATE", "DELETE", "DROP TABLE", "DROP DATABASE"}
 	for _, prefix := range allowedPrefixes {
 		if hasSQLPrefix(query, prefix) {
 			return true

@@ -2,6 +2,8 @@
 
 A small distributed database demo using Go, MySQL, HTTP APIs, master/slave replication, and basic fault tolerance.
 
+All nodes can serve reads and can execute local table and row operations such as `SELECT`, `CREATE TABLE`, `INSERT`, `UPDATE`, `DELETE`, and `DROP TABLE`. Replication is still initiated by the master node, and `DROP DATABASE` remains master-only.
+
 ## Run The Nodes
 
 Create or edit `.env` from `.env.example`, then set your MySQL password in each DSN.

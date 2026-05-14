@@ -7,6 +7,10 @@ type CreateTableRequest struct {
 	Columns map[string]string `json:"columns"`
 }
 
+type DropTableRequest struct {
+	Table string `json:"table"`
+}
+
 type QueryRequest struct {
 	Query string `json:"query"`
 }
