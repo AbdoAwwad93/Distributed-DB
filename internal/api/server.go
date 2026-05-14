@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"distributed-db/internal/config"
 	"distributed-db/internal/models"
@@ -17,6 +18,8 @@ type Server struct {
 	mux         *http.ServeMux
 	store       *storage.Store
 	broadcaster *replication.Broadcaster
+	roleMu      sync.RWMutex
+	role        string
 }
 
 type healthResponse struct {
@@ -42,10 +45,14 @@ func NewServer(cfg config.NodeConfig, store *storage.Store, broadcaster *replica
 		mux:         mux,
 		store:       store,
 		broadcaster: broadcaster,
+		role:        cfg.Role,
 	}
 
 	mux.HandleFunc("/health", server.handleHealth)
 	mux.HandleFunc("/db/health", server.handleDBHealth)
+	mux.HandleFunc("/cluster/status", server.handleClusterStatus)
+	mux.HandleFunc("/replication/retry", server.handleReplicationRetry)
+	mux.HandleFunc("/promote", server.handlePromote)
 	mux.HandleFunc("/create-table", server.handleCreateTable)
 	mux.HandleFunc("/insert", server.handleInsert)
 	mux.HandleFunc("/update", server.handleUpdate)
@@ -63,7 +70,7 @@ func (s *Server) Start() error {
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{
 		Status: "ok",
-		Node:   s.config.Role,
+		Node:   s.currentRole(),
 	})
 }
 
@@ -75,16 +82,55 @@ func (s *Server) handleDBHealth(w http.ResponseWriter, _ *http.Request) {
 
 	writeJSON(w, http.StatusOK, dbHealthResponse{
 		Status: "ok",
-		Node:   s.config.Role,
+		Node:   s.currentRole(),
 		DBName: s.config.DBName,
 	})
+}
+
+func (s *Server) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.broadcaster == nil {
+		writeJSON(w, http.StatusOK, models.ClusterStatusResponse{Node: s.currentRole()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.ClusterStatusResponse{
+		Node:   s.currentRole(),
+		Slaves: s.broadcaster.Status(),
+	})
+}
+
+func (s *Server) handleReplicationRetry(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if s.broadcaster == nil {
+		http.Error(w, "replication retry is only available on a master with slaves", http.StatusBadRequest)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, writeResponse{
+		Message:     "retry completed",
+		Replication: s.broadcaster.RetryPending(),
+	})
+}
+
+func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPut) {
+		return
+	}
+
+	s.setRole("master")
+	writeJSON(w, http.StatusOK, models.MessageResponse{Message: "node promoted to master"})
 }
 
 func (s *Server) handleCreateTable(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if s.config.Role != "master" {
+	if s.currentRole() != "master" {
 		http.Error(w, "table creation is only allowed on master", http.StatusForbidden)
 		return
 	}
@@ -146,7 +192,7 @@ func (s *Server) handleReplicate(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if s.config.Role == "master" {
+	if s.currentRole() == "master" {
 		http.Error(w, "master does not accept replication writes", http.StatusForbidden)
 		return
 	}
@@ -172,7 +218,7 @@ func (s *Server) handleWriteQuery(w http.ResponseWriter, r *http.Request, method
 	if !requireMethod(w, r, method) {
 		return
 	}
-	if s.config.Role != "master" {
+	if s.currentRole() != "master" {
 		http.Error(w, "writes are only allowed on master", http.StatusForbidden)
 		return
 	}
@@ -198,11 +244,23 @@ func (s *Server) handleWriteQuery(w http.ResponseWriter, r *http.Request, method
 }
 
 func (s *Server) broadcastIfMaster(query string) []models.ReplicationResponse {
-	if s.config.Role != "master" || s.broadcaster == nil {
+	if s.currentRole() != "master" || s.broadcaster == nil {
 		return nil
 	}
 
 	return s.broadcaster.Broadcast(query)
+}
+
+func (s *Server) currentRole() string {
+	s.roleMu.RLock()
+	defer s.roleMu.RUnlock()
+	return s.role
+}
+
+func (s *Server) setRole(role string) {
+	s.roleMu.Lock()
+	defer s.roleMu.Unlock()
+	s.role = role
 }
 
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {

@@ -19,6 +19,8 @@ func main() {
 	defer store.Close()
 
 	broadcaster := replication.NewBroadcaster(cfg.SlaveURLs)
+	broadcaster.StartHealthChecks(cfg.HealthCheckInterval)
+
 	server := api.NewServer(cfg, store, broadcaster)
 
 	log.Printf("starting %s node on %s", cfg.Role, cfg.Address())

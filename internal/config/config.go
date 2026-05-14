@@ -5,15 +5,17 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type NodeConfig struct {
-	Role      string
-	Host      string
-	Port      string
-	MySQLDSN  string
-	DBName    string
-	SlaveURLs []string
+	Role                string
+	Host                string
+	Port                string
+	MySQLDSN            string
+	DBName              string
+	SlaveURLs           []string
+	HealthCheckInterval time.Duration
 }
 
 func LoadMasterConfig() NodeConfig {
@@ -21,12 +23,13 @@ func LoadMasterConfig() NodeConfig {
 	dsn := envOrDefault("MYSQL_DSN", "root:@tcp(localhost:3306)/distributed_master?parseTime=true")
 
 	return NodeConfig{
-		Role:      "master",
-		Host:      envOrDefault("MASTER_HOST", "localhost"),
-		Port:      envOrDefault("MASTER_PORT", "8080"),
-		MySQLDSN:  dsn,
-		DBName:    databaseNameFromDSN(dsn),
-		SlaveURLs: csvEnv("SLAVE_URLS"),
+		Role:                "master",
+		Host:                envOrDefault("MASTER_HOST", "localhost"),
+		Port:                envOrDefault("MASTER_PORT", "8080"),
+		MySQLDSN:            dsn,
+		DBName:              databaseNameFromDSN(dsn),
+		SlaveURLs:           csvEnv("SLAVE_URLS"),
+		HealthCheckInterval: 5*time.Second,
 	}
 }
 
