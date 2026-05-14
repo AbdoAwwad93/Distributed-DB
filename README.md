@@ -209,7 +209,8 @@ Invoke-RestMethod -Method Post http://localhost:8080/replication/retry
 When a slave submits a master-only request:
 
 - the slave returns `202 Accepted` with the pending approval request
-- the master can list requests with `GET /approval-requests`
+- the master can list pending requests with `GET /approval-requests`
+- the master can list all requests with `GET /approval-requests?status=all`
 - the master can approve with `PUT /approval-requests/{id}/approve`
 - the master can reject with `PUT /approval-requests/{id}/reject`
 
@@ -227,6 +228,12 @@ List pending requests on the master:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/approval-requests
+```
+
+List all requests on the master:
+
+```powershell
+Invoke-RestMethod "http://localhost:8080/approval-requests?status=all"
 ```
 
 Approve a request on the master:

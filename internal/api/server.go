@@ -392,7 +392,7 @@ func (s *Server) handleApprovalRequests(w http.ResponseWriter, r *http.Request) 
 
 	switch r.Method {
 	case http.MethodGet:
-		s.listApprovalRequests(w)
+		s.listApprovalRequests(w, r)
 	case http.MethodPost:
 		s.createApprovalRequest(w, r)
 	default:
@@ -434,10 +434,18 @@ func (s *Server) handleApprovalDecision(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (s *Server) listApprovalRequests(w http.ResponseWriter) {
+func (s *Server) listApprovalRequests(w http.ResponseWriter, r *http.Request) {
+	statusFilter := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("status")))
+	if statusFilter == "" {
+		statusFilter = "pending"
+	}
+
 	s.approvalMu.Lock()
 	requests := make([]models.ApprovalRequest, 0, len(s.approvals))
 	for _, record := range s.approvals {
+		if statusFilter != "all" && strings.ToLower(record.Status) != statusFilter {
+			continue
+		}
 		requests = append(requests, record.toModel())
 	}
 	s.approvalMu.Unlock()
