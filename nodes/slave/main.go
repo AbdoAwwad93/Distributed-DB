@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	cfg := config.LoadGenericSlaveConfig()
+	cfg := config.LoadSlaveConfig()
 
 	store, err := storage.NewStore(cfg.MySQLDSN)
 	if err != nil {

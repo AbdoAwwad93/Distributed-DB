@@ -1,7 +1,6 @@
 param(
     [string]$MasterUrl = "http://localhost:8080",
-    [string]$Slave1Url = "http://localhost:8081",
-    [string]$Slave2Url = "http://localhost:8082",
+    [string]$SlaveUrl = "http://localhost:8081",
     [switch]$SkipMasterStopCheck
 )
 
@@ -70,10 +69,13 @@ function Show-Rows {
     $response.rows | Format-Table -AutoSize
 }
 
-Write-Step "Checking all nodes"
+Write-Step "Checking nodes"
 Invoke-RestMethod "$MasterUrl/health" | Format-List
-Invoke-RestMethod "$Slave1Url/health" | Format-List
-Invoke-RestMethod "$Slave2Url/health" | Format-List
+Invoke-RestMethod "$SlaveUrl/health" | Format-List
+
+Write-Step "Waiting for slave registration"
+Start-Sleep -Seconds 2
+Invoke-RestMethod "$MasterUrl/cluster/status" | ConvertTo-Json -Depth 8
 
 Write-Step "Creating seed table on master"
 Invoke-Json -Method Post -Uri "$MasterUrl/create-table" -Body @{
@@ -91,35 +93,31 @@ Write-Step "Clearing old demo rows"
 Invoke-WriteQuery -Method Delete -Path "/delete" -Query "DELETE FROM demo_users" | ConvertTo-Json -Depth 8
 Start-Sleep -Seconds 1
 
-Write-Step "Inserting rows on master and replicating to slaves"
+Write-Step "Inserting rows on master and replicating to slave"
 Invoke-WriteQuery -Method Post -Path "/insert" -Query "INSERT INTO demo_users(id, name, email, status) VALUES (1, 'Ali', 'ali@test.com', 'active')" | ConvertTo-Json -Depth 8
 Invoke-WriteQuery -Method Post -Path "/insert" -Query "INSERT INTO demo_users(id, name, email, status) VALUES (2, 'Omar', 'omar@test.com', 'active')" | ConvertTo-Json -Depth 8
 Start-Sleep -Seconds 1
-Show-Rows -Title "Rows from slave1 after insert replication" -BaseUrl $Slave1Url
-Show-Rows -Title "Rows from slave2 after insert replication" -BaseUrl $Slave2Url
+Show-Rows -Title "Rows from slave after insert replication" -BaseUrl $SlaveUrl
 
-Write-Step "Updating one row on master and reading from slaves"
+Write-Step "Updating one row on master and reading from slave"
 Invoke-WriteQuery -Method Put -Path "/update" -Query "UPDATE demo_users SET status='updated' WHERE id=1" | ConvertTo-Json -Depth 8
 Start-Sleep -Seconds 1
-Show-Rows -Title "Rows from slave1 after update replication" -BaseUrl $Slave1Url
-Show-Rows -Title "Rows from slave2 after update replication" -BaseUrl $Slave2Url
+Show-Rows -Title "Rows from slave after update replication" -BaseUrl $SlaveUrl
 
-Write-Step "Deleting one row on master and reading from slaves"
+Write-Step "Deleting one row on master and reading from slave"
 Invoke-WriteQuery -Method Delete -Path "/delete" -Query "DELETE FROM demo_users WHERE id=2" | ConvertTo-Json -Depth 8
 Start-Sleep -Seconds 1
-Show-Rows -Title "Rows from slave1 after delete replication" -BaseUrl $Slave1Url
-Show-Rows -Title "Rows from slave2 after delete replication" -BaseUrl $Slave2Url
+Show-Rows -Title "Rows from slave after delete replication" -BaseUrl $SlaveUrl
 
 Write-Step "Cluster status from master"
 Invoke-RestMethod "$MasterUrl/cluster/status" | ConvertTo-Json -Depth 8
 
 if (-not $SkipMasterStopCheck) {
     Write-Step "Master failure demo"
-    Write-Host "Stop the master terminal now with Ctrl+C. Leave slave1 and slave2 running."
+    Write-Host "Stop the master terminal now with Ctrl+C. Leave the slave running."
     Read-Host "Press Enter after the master is stopped"
 
-    Show-Rows -Title "Slave1 still serves reads while master is stopped" -BaseUrl $Slave1Url
-    Show-Rows -Title "Slave2 still serves reads while master is stopped" -BaseUrl $Slave2Url
+    Show-Rows -Title "Slave still serves reads while master is stopped" -BaseUrl $SlaveUrl
 }
 
 Write-Step "Demo completed"

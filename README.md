@@ -1,22 +1,31 @@
 # Distributed Database System
 
-A Go + MySQL distributed database demo with HTTP replication, dynamic slave registration, and basic fault tolerance.
+A Go + MySQL distributed database demo with one master program and one reusable slave program.
 
-## Multi-Device Setup
+## Main Idea
 
-The master can run on one device, and any number of other devices can run the same generic slave code. Slaves register themselves with the master over the network.
+Run the master on one device. Run the same slave code on any other device. The slave only needs the master's IP address in `MASTER_URL`, then it automatically registers itself with the master.
 
-### 1. Master Device
+Project commands:
 
-On the master machine, set `.env` like this. Replace `192.168.1.10` with the master's LAN IP address.
+```text
+nodes/master    master node
+nodes/slave     generic slave node for every slave device
+```
+
+There is no separate `slave1` or `slave2` code anymore.
+
+## Master Device Setup
+
+On the master device, create `.env` like this. Replace `MASTER_DEVICE_IP` with the real LAN IP of the master device.
 
 ```env
 MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_master?parseTime=true
 MASTER_ID=master
 MASTER_HOST=0.0.0.0
 MASTER_PORT=8080
-MASTER_PUBLIC_URL=http://192.168.1.10:8080
-MASTER_URL=http://192.168.1.10:8080
+MASTER_PUBLIC_URL=http://MASTER_DEVICE_IP:8080
+MASTER_URL=http://MASTER_DEVICE_IP:8080
 SLAVE_URLS=
 ```
 
@@ -26,68 +35,74 @@ Start the master:
 go run .\nodes\master
 ```
 
-The master listens on all network interfaces because `MASTER_HOST=0.0.0.0`.
+`MASTER_HOST=0.0.0.0` makes the master listen on the network, not only on localhost.
 
-### 2. Any Slave Device
+## Slave Device Setup
 
-On each slave machine, use the same project code and set `.env` like this. Replace the IPs with your real master/slave LAN IPs.
+On each slave device, use the same project code and create `.env` like this. Replace `MASTER_DEVICE_IP` with the master IP. Replace `THIS_SLAVE_DEVICE_IP` with the slave device IP.
 
 ```env
-MASTER_URL=http://192.168.1.10:8080
-NODE_ID=slave-laptop-1
+MASTER_URL=http://MASTER_DEVICE_IP:8080
+NODE_ID=slave-1
 NODE_HOST=0.0.0.0
 NODE_PORT=8081
-NODE_PUBLIC_URL=http://192.168.1.11:8081
+NODE_PUBLIC_URL=http://THIS_SLAVE_DEVICE_IP:8081
 NODE_MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_slave?parseTime=true
 ```
 
-Start the generic slave:
+Start the slave:
 
 ```powershell
 go run .\nodes\slave
 ```
 
-The slave will keep retrying `POST /register-slave` until the master is reachable. You can run more slaves by changing `NODE_ID`, `NODE_PORT`, `NODE_PUBLIC_URL`, and the database name in `NODE_MYSQL_DSN`.
+The slave keeps retrying registration until the master is reachable. To add more slaves, run the same command on another device and change only:
 
-### 3. Confirm Registration
-
-From any machine that can reach the master:
-
-```powershell
-Invoke-RestMethod http://192.168.1.10:8080/cluster/status
+```env
+NODE_ID=slave-2
+NODE_PUBLIC_URL=http://ANOTHER_SLAVE_IP:8081
+NODE_MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_slave2?parseTime=true
 ```
 
-You should see the registered slaves with their IDs, URLs, health state, and pending replication count.
+## Confirm Connection
 
-## Demo On One Device
+From any device that can reach the master:
 
-You can still run the fixed demo nodes locally in three terminals:
+```powershell
+Invoke-RestMethod http://MASTER_DEVICE_IP:8080/cluster/status
+```
+
+You should see registered slaves with their IDs, URLs, health state, and pending replication count.
+
+## Local Demo On One Device
+
+Use one master terminal and one slave terminal.
+
+Terminal 1:
 
 ```powershell
 go run .\nodes\master
 ```
 
-```powershell
-go run .\nodes\slave1
-```
+Terminal 2:
 
 ```powershell
-go run .\nodes\slave2
+go run .\nodes\slave
 ```
 
-Then run:
+Terminal 3:
 
 ```powershell
 .\scripts\demo.ps1
 ```
 
-The script demonstrates table creation, insert/update/delete replication, reads from slaves, and slave read availability after stopping the master.
+The demo creates `demo_users`, inserts rows, updates a row, deletes a row, reads from the slave, and then lets you stop the master to prove the slave still serves reads.
 
-## Main APIs
+## APIs
 
 | Endpoint | Node | Purpose |
 | --- | --- | --- |
-| `POST /register-slave` | Master | Dynamically add a slave to replication |
+| `POST /register-slave` | Master | Slave registers itself automatically |
 | `GET /cluster/status` | Master | Show registered slaves and health |
 | `POST /create-table` | Master approval flow | Create table |
 | `DELETE /drop-table` | Master approval flow | Drop table |
@@ -101,6 +116,7 @@ The script demonstrates table creation, insert/update/delete replication, reads 
 ## Network Checklist
 
 - Use real LAN IP addresses, not `localhost`, when machines are different devices.
-- Open the node ports in Windows Firewall, for example `8080` on master and `8081` on each slave.
-- Make sure each machine can reach the other with `Invoke-RestMethod http://IP:PORT/health`.
-- Each device can use its own local MySQL server with its own database.
+- Open Windows Firewall for `8080` on the master and `8081` on each slave.
+- Test master reachability from a slave with `Invoke-RestMethod http://MASTER_DEVICE_IP:8080/health`.
+- Test slave reachability from master with `Invoke-RestMethod http://SLAVE_DEVICE_IP:8081/health`.
+- Each device can use its own local MySQL server and database.

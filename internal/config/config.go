@@ -24,13 +24,12 @@ type NodeConfig struct {
 func LoadMasterConfig() NodeConfig {
 	LoadDotEnv(".env")
 	dsn := envOrDefault("MYSQL_DSN", "root:@tcp(localhost:3306)/distributed_master?parseTime=true")
-	host := envOrDefault("MASTER_HOST", "0.0.0.0")
 	port := envOrDefault("MASTER_PORT", "8080")
 
 	return NodeConfig{
 		Role:                "master",
 		NodeID:              envOrDefault("MASTER_ID", "master"),
-		Host:                host,
+		Host:                envOrDefault("MASTER_HOST", "0.0.0.0"),
 		Port:                port,
 		PublicURL:           envOrDefault("MASTER_PUBLIC_URL", "http://localhost:"+port),
 		MasterURL:           envOrDefault("MASTER_URL", "http://localhost:"+port),
@@ -41,26 +40,7 @@ func LoadMasterConfig() NodeConfig {
 	}
 }
 
-func LoadSlaveConfig(role, defaultPort, dsnEnv, defaultDSN string) NodeConfig {
-	LoadDotEnv(".env")
-	dsn := envOrDefault(dsnEnv, defaultDSN)
-	upperRole := strings.ToUpper(role)
-	host := envOrDefault(upperRole+"_HOST", "0.0.0.0")
-	port := envOrDefault(upperRole+"_PORT", defaultPort)
-
-	return NodeConfig{
-		Role:      role,
-		NodeID:    envOrDefault(upperRole+"_ID", role),
-		Host:      host,
-		Port:      port,
-		PublicURL: envOrDefault(upperRole+"_PUBLIC_URL", "http://localhost:"+port),
-		MasterURL: envOrDefault("MASTER_URL", "http://localhost:8080"),
-		MySQLDSN:  dsn,
-		DBName:    databaseNameFromDSN(dsn),
-	}
-}
-
-func LoadGenericSlaveConfig() NodeConfig {
+func LoadSlaveConfig() NodeConfig {
 	LoadDotEnv(".env")
 	port := envOrDefault("NODE_PORT", "8081")
 	dsn := envOrDefault("NODE_MYSQL_DSN", "root:@tcp(localhost:3306)/distributed_slave?parseTime=true")
