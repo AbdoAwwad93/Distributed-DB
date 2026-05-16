@@ -15,6 +15,17 @@ type QueryRequest struct {
 	Query string `json:"query"`
 }
 
+type RegisterSlaveRequest struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
+}
+
+type RegisterSlaveResponse struct {
+	Message string `json:"message"`
+	ID      string `json:"id"`
+	URL     string `json:"url"`
+}
+
 type ApprovalSubmissionRequest struct {
 	Method      string `json:"method"`
 	Path        string `json:"path"`
@@ -65,6 +76,7 @@ type ReplicationResponse struct {
 }
 
 type SlaveStatus struct {
+	ID           string    `json:"id,omitempty"`
 	URL          string    `json:"url"`
 	Healthy      bool      `json:"healthy"`
 	LastChecked  time.Time `json:"lastChecked,omitempty"`

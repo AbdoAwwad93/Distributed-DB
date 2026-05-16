@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	cfg := config.LoadSlaveConfig("slave1", "8081", "SLAVE1_MYSQL_DSN", "root:@tcp(localhost:3306)/distributed_slave1?parseTime=true")
+	cfg := config.LoadGenericSlaveConfig()
 
 	store, err := storage.NewStore(cfg.MySQLDSN)
 	if err != nil {

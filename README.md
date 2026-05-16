@@ -1,65 +1,67 @@
 # Distributed Database System
 
-A small distributed database demo built with Go, MySQL, and HTTP APIs. The project runs one master node and two slave nodes, supports replication from the master to slaves, and follows a master-write / slave-read model.
+A Go + MySQL distributed database demo with HTTP replication, dynamic slave registration, and basic fault tolerance.
 
-## Features
+## Multi-Device Setup
 
-- Master and slave nodes expose HTTP APIs
-- Master can replicate writes to slave nodes
-- Only the master can run write operations such as `CREATE TABLE`, `INSERT`, `UPDATE`, `DELETE`, `DROP TABLE`, and `DROP DATABASE`
-- Slave nodes submit master-only requests to the master for approval
-- `DROP DATABASE` is restricted to the master node
-- Basic health checks and cluster status endpoints
-- Demo script for a quick end-to-end walkthrough
+The master can run on one device, and any number of other devices can run the same generic slave code. Slaves register themselves with the master over the network.
 
-## Project Structure
+### 1. Master Device
 
-```text
-nodes/master   - master node entrypoint
-nodes/slave1   - slave 1 entrypoint
-nodes/slave2   - slave 2 entrypoint
-internal/api - HTTP handlers
-internal/storage - MySQL access
-internal/replication - replication logic
-scripts/demo.ps1 - demo script
-```
-
-## Requirements
-
-- Go installed
-- MySQL server running
-- A MySQL user that can create and modify the configured databases
-- PowerShell for running the demo script
-
-## Setup
-
-1. Clone the repository.
-2. Copy `.env.example` to `.env`.
-3. Update the MySQL password in the DSNs inside `.env`.
-4. Make sure MySQL is running on the host and port used in the DSNs.
-5. Set `MASTER_URL` so slave nodes know where to forward master-only requests.
-
-Example `.env` values:
+On the master machine, set `.env` like this. Replace `192.168.1.10` with the master's LAN IP address.
 
 ```env
 MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_master?parseTime=true
-SLAVE1_MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_slave1?parseTime=true
-SLAVE2_MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_slave2?parseTime=true
-
-MASTER_HOST=localhost
+MASTER_ID=master
+MASTER_HOST=0.0.0.0
 MASTER_PORT=8080
-MASTER_URL=http://localhost:8080
-SLAVE1_HOST=localhost
-SLAVE1_PORT=8081
-SLAVE2_HOST=localhost
-SLAVE2_PORT=8082
-
-SLAVE_URLS=http://localhost:8081,http://localhost:8082
+MASTER_PUBLIC_URL=http://192.168.1.10:8080
+MASTER_URL=http://192.168.1.10:8080
+SLAVE_URLS=
 ```
 
-## Run The Nodes
+Start the master:
 
-Start each node in a separate PowerShell terminal:
+```powershell
+go run .\nodes\master
+```
+
+The master listens on all network interfaces because `MASTER_HOST=0.0.0.0`.
+
+### 2. Any Slave Device
+
+On each slave machine, use the same project code and set `.env` like this. Replace the IPs with your real master/slave LAN IPs.
+
+```env
+MASTER_URL=http://192.168.1.10:8080
+NODE_ID=slave-laptop-1
+NODE_HOST=0.0.0.0
+NODE_PORT=8081
+NODE_PUBLIC_URL=http://192.168.1.11:8081
+NODE_MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_slave?parseTime=true
+```
+
+Start the generic slave:
+
+```powershell
+go run .\nodes\slave
+```
+
+The slave will keep retrying `POST /register-slave` until the master is reachable. You can run more slaves by changing `NODE_ID`, `NODE_PORT`, `NODE_PUBLIC_URL`, and the database name in `NODE_MYSQL_DSN`.
+
+### 3. Confirm Registration
+
+From any machine that can reach the master:
+
+```powershell
+Invoke-RestMethod http://192.168.1.10:8080/cluster/status
+```
+
+You should see the registered slaves with their IDs, URLs, health state, and pending replication count.
+
+## Demo On One Device
+
+You can still run the fixed demo nodes locally in three terminals:
 
 ```powershell
 go run .\nodes\master
@@ -73,187 +75,32 @@ go run .\nodes\slave1
 go run .\nodes\slave2
 ```
 
-Default URLs:
-
-| Node | URL |
-| --- | --- |
-| Master | `http://localhost:8080` |
-| Slave 1 | `http://localhost:8081` |
-| Slave 2 | `http://localhost:8082` |
-
-The application creates the configured databases automatically on startup if they do not already exist.
-
-## Run The Demo
-
-Run the demo script from another PowerShell terminal:
+Then run:
 
 ```powershell
 .\scripts\demo.ps1
 ```
 
-Run it without the manual master-stop step:
+The script demonstrates table creation, insert/update/delete replication, reads from slaves, and slave read availability after stopping the master.
 
-```powershell
-.\scripts\demo.ps1 -SkipMasterStopCheck
-```
+## Main APIs
 
-The demo covers:
+| Endpoint | Node | Purpose |
+| --- | --- | --- |
+| `POST /register-slave` | Master | Dynamically add a slave to replication |
+| `GET /cluster/status` | Master | Show registered slaves and health |
+| `POST /create-table` | Master approval flow | Create table |
+| `DELETE /drop-table` | Master approval flow | Drop table |
+| `DELETE /drop-database` | Master only | Drop database |
+| `POST /insert` | Master approval flow | Insert records |
+| `PUT /update` | Master approval flow | Update records |
+| `DELETE /delete` | Master approval flow | Delete records |
+| `GET /select` | All nodes | Read/search records |
+| `POST /replicate` | Slaves | Apply replicated write |
 
-- Health checks
-- Creating a table on the master
-- Insert, update, and delete replication
-- Reading data from slaves
-- Basic master failure behavior
+## Network Checklist
 
-## API Usage Examples
-
-### Health Check
-
-```powershell
-Invoke-RestMethod http://localhost:8080/health
-Invoke-RestMethod http://localhost:8081/health
-Invoke-RestMethod http://localhost:8082/health
-```
-
-### Database Health
-
-```powershell
-Invoke-RestMethod http://localhost:8080/db/health
-```
-
-### Cluster Status
-
-```powershell
-Invoke-RestMethod http://localhost:8080/cluster/status
-```
-
-### Create Table
-
-Create tables through the master:
-
-```powershell
-Invoke-RestMethod -Method Post http://localhost:8080/create-table -ContentType "application/json" -Body (@{
-    table = "demo_users"
-    columns = @{
-        id = "INT PRIMARY KEY"
-        name = "VARCHAR(255)"
-        email = "VARCHAR(255)"
-        status = "VARCHAR(30)"
-    }
-} | ConvertTo-Json -Depth 8)
-```
-
-### Insert Row
-
-```powershell
-Invoke-RestMethod -Method Post http://localhost:8080/insert -ContentType "application/json" -Body (@{
-    query = "INSERT INTO demo_users(id, name, email, status) VALUES (1, 'Ali', 'ali@test.com', 'active')"
-} | ConvertTo-Json)
-```
-
-### Update Row
-
-```powershell
-Invoke-RestMethod -Method Put http://localhost:8080/update -ContentType "application/json" -Body (@{
-    query = "UPDATE demo_users SET status='inactive' WHERE id=1"
-} | ConvertTo-Json)
-```
-
-### Delete Row
-
-```powershell
-Invoke-RestMethod -Method Delete http://localhost:8080/delete -ContentType "application/json" -Body (@{
-    query = "DELETE FROM demo_users WHERE id=1"
-} | ConvertTo-Json)
-```
-
-### Select Rows
-
-```powershell
-$query = [System.Uri]::EscapeDataString("SELECT * FROM demo_users")
-Invoke-RestMethod "http://localhost:8081/select?query=$query"
-```
-
-### Drop Table
-
-```powershell
-Invoke-RestMethod -Method Delete http://localhost:8080/drop-table -ContentType "application/json" -Body (@{
-    table = "demo_users"
-} | ConvertTo-Json)
-```
-
-### Drop Database
-
-Only the master node can drop its configured database:
-
-```powershell
-Invoke-RestMethod -Method Delete http://localhost:8080/drop-database
-```
-
-### Retry Pending Replication
-
-```powershell
-Invoke-RestMethod -Method Post http://localhost:8080/replication/retry
-```
-
-## Behavior Notes
-
-- All client write operations must be sent to the master node.
-- If a client sends a master-only operation to a slave, the slave submits it to `MASTER_URL` as a pending approval request.
-- The master must explicitly approve or reject that request before anything is executed.
-- The master replicates supported writes to the slave nodes.
-- Slave nodes are intended for read operations such as `SELECT`.
-- `DROP DATABASE` is master-only.
-- Slave nodes can be promoted with the `/promote` endpoint if needed.
-
-When a slave submits a master-only request:
-
-- the slave returns `202 Accepted` with the pending approval request
-- the master can list pending requests with `GET /approval-requests`
-- the master can list all requests with `GET /approval-requests?status=all`
-- the master can approve with `PUT /approval-requests/{id}/approve`
-- the master can reject with `PUT /approval-requests/{id}/reject`
-
-## Approval Workflow Examples
-
-Submit a write to a slave:
-
-```powershell
-Invoke-RestMethod -Method Post http://localhost:8081/insert -ContentType "application/json" -Body (@{
-    query = "INSERT INTO demo_users(id, name, email, status) VALUES (5, 'Nora', 'nora@test.com', 'pending')"
-} | ConvertTo-Json)
-```
-
-List pending requests on the master:
-
-```powershell
-Invoke-RestMethod http://localhost:8080/approval-requests
-```
-
-List all requests on the master:
-
-```powershell
-Invoke-RestMethod "http://localhost:8080/approval-requests?status=all"
-```
-
-Approve a request on the master:
-
-```powershell
-Invoke-RestMethod -Method Put http://localhost:8080/approval-requests/approval-1/approve -ContentType "application/json" -Body (@{
-    reason = "approved by master"
-} | ConvertTo-Json)
-```
-
-Reject a request on the master:
-
-```powershell
-Invoke-RestMethod -Method Put http://localhost:8080/approval-requests/approval-1/reject -ContentType "application/json" -Body (@{
-    reason = "not allowed"
-} | ConvertTo-Json)
-```
-
-## Example Promote Request
-
-```powershell
-Invoke-RestMethod -Method Put http://localhost:8081/promote
-```
+- Use real LAN IP addresses, not `localhost`, when machines are different devices.
+- Open the node ports in Windows Firewall, for example `8080` on master and `8081` on each slave.
+- Make sure each machine can reach the other with `Invoke-RestMethod http://IP:PORT/health`.
+- Each device can use its own local MySQL server with its own database.

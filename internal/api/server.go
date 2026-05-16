@@ -79,6 +79,7 @@ func NewServer(cfg config.NodeConfig, store *storage.Store, broadcaster *replica
 	mux.HandleFunc("/health", server.handleHealth)
 	mux.HandleFunc("/db/health", server.handleDBHealth)
 	mux.HandleFunc("/cluster/status", server.handleClusterStatus)
+	mux.HandleFunc("/register-slave", server.handleRegisterSlave)
 	mux.HandleFunc("/approval-requests", server.handleApprovalRequests)
 	mux.HandleFunc("/approval-requests/", server.handleApprovalDecision)
 	mux.HandleFunc("/replication/retry", server.handleReplicationRetry)
@@ -134,6 +135,41 @@ func (s *Server) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleRegisterSlave(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if s.currentRole() != "master" {
+		http.Error(w, "slave registration is only available on master", http.StatusForbidden)
+		return
+	}
+	if s.broadcaster == nil {
+		http.Error(w, "master replication broadcaster is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var request models.RegisterSlaveRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	request.ID = strings.TrimSpace(request.ID)
+	request.URL = strings.TrimRight(strings.TrimSpace(request.URL), "/")
+	if request.ID == "" || request.URL == "" {
+		http.Error(w, "id and url are required", http.StatusBadRequest)
+		return
+	}
+	if !strings.HasPrefix(request.URL, "http://") && !strings.HasPrefix(request.URL, "https://") {
+		http.Error(w, "url must start with http:// or https://", http.StatusBadRequest)
+		return
+	}
+
+	status := s.broadcaster.AddSlave(request.ID, request.URL)
+	writeJSON(w, http.StatusCreated, models.RegisterSlaveResponse{
+		Message: "slave registered",
+		ID:      status.ID,
+		URL:     status.URL,
+	})
+}
 func (s *Server) handleReplicationRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return

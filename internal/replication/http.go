@@ -21,6 +21,7 @@ type pendingOperation struct {
 }
 
 type slaveState struct {
+	ID          string
 	URL         string
 	Healthy     bool
 	LastChecked time.Time
@@ -51,6 +52,33 @@ func NewBroadcaster(slaveURLs []string) *Broadcaster {
 	}
 }
 
+func (b *Broadcaster) AddSlave(id, slaveURL string) models.SlaveStatus {
+	if b == nil {
+		return models.SlaveStatus{}
+	}
+
+	slaveURL = strings.TrimRight(strings.TrimSpace(slaveURL), "/")
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	slave := b.slaves[slaveURL]
+	if slave == nil {
+		slave = &slaveState{URL: slaveURL, Healthy: true}
+		b.slaves[slaveURL] = slave
+	}
+	slave.ID = id
+	slave.URL = slaveURL
+	slave.LastError = ""
+
+	return models.SlaveStatus{
+		ID:           slave.ID,
+		URL:          slave.URL,
+		Healthy:      slave.Healthy,
+		LastChecked:  slave.LastChecked,
+		LastError:    slave.LastError,
+		PendingCount: len(slave.Pending),
+	}
+}
 func (b *Broadcaster) StartHealthChecks(interval time.Duration) {
 	if b == nil || interval <= 0 {
 		return
@@ -148,6 +176,7 @@ func (b *Broadcaster) Status() []models.SlaveStatus {
 	statuses := make([]models.SlaveStatus, 0, len(b.slaves))
 	for _, slave := range b.slaves {
 		statuses = append(statuses, models.SlaveStatus{
+			ID:           slave.ID,
 			URL:          slave.URL,
 			Healthy:      slave.Healthy,
 			LastChecked:  slave.LastChecked,

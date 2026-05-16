@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"distributed-db/internal/api"
+	"distributed-db/internal/cluster"
 	"distributed-db/internal/config"
 	"distributed-db/internal/storage"
 )
@@ -18,8 +19,9 @@ func main() {
 	defer store.Close()
 
 	server := api.NewServer(cfg, store, nil)
+	go cluster.RegisterSlaveLoop(cfg)
 
-	log.Printf("starting %s node on %s", cfg.Role, cfg.Address())
+	log.Printf("starting %s node %s on %s", cfg.Role, cfg.NodeID, cfg.Address())
 	if err := server.Start(); err != nil {
 		log.Fatal(err)
 	}
