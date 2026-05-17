@@ -36,6 +36,7 @@ go run .\nodes\master
 ```
 
 `MASTER_HOST=0.0.0.0` makes the master listen on the network, not only on localhost.
+After the server starts, the master terminal also shows an operations menu so you can choose actions interactively.
 
 ## Slave Device Setup
 
@@ -63,6 +64,8 @@ NODE_ID=slave-2
 NODE_PUBLIC_URL=http://ANOTHER_SLAVE_IP:8081
 NODE_MYSQL_DSN=root:your_mysql_password@tcp(localhost:3306)/distributed_slave2?parseTime=true
 ```
+
+Each slave terminal also shows an operations menu. When you run write operations from a slave, the request is forwarded to the master approval queue.
 
 ## Confirm Connection
 
@@ -97,6 +100,15 @@ Terminal 3:
 ```
 
 The demo creates `demo_users`, inserts rows, updates a row, deletes a row, reads from the slave, and then lets you stop the master to prove the slave still serves reads.
+
+## Interactive Menus
+
+Both node programs now open a terminal menu after startup:
+
+- Master menu: create/drop tables, drop the database, run insert/update/delete/select queries, show cluster status, review approval requests, approve/reject requests, and retry pending replication.
+- Slave menu: create/drop tables, run insert/update/delete/select queries, and promote the slave to master.
+
+For each operation, the program asks for the required input such as table name, columns, approval ID, or SQL query.
 
 ## APIs
 

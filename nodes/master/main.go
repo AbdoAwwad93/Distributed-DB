@@ -5,6 +5,7 @@ import (
 
 	"distributed-db/internal/api"
 	"distributed-db/internal/config"
+	"distributed-db/internal/console"
 	"distributed-db/internal/replication"
 	"distributed-db/internal/storage"
 )
@@ -22,9 +23,14 @@ func main() {
 	broadcaster.StartHealthChecks(cfg.HealthCheckInterval)
 
 	server := api.NewServer(cfg, store, broadcaster)
+	menu := console.NewMenu(cfg)
 
 	log.Printf("starting %s node on %s", cfg.Role, cfg.Address())
-	if err := server.Start(); err != nil {
-		log.Fatal(err)
-	}
+	go func() {
+		if err := server.Start(); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	menu.Run()
 }
