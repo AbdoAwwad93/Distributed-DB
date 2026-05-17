@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -164,6 +165,7 @@ func (s *Server) handleRegisterSlave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := s.broadcaster.AddSlave(request.ID, request.URL)
+	log.Printf("registered slave id=%s url=%s", status.ID, status.URL)
 	writeJSON(w, http.StatusCreated, models.RegisterSlaveResponse{
 		Message: "slave registered",
 		ID:      status.ID,
