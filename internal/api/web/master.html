@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Distributed DB Master</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body data-page="master">
+  <div class="shell">
+    <section class="hero">
+      <article class="hero-card">
+        <div class="eyebrow">Master Control</div>
+        <h1>Run cluster operations without raw JSON.</h1>
+        <p>
+          This dashboard gives the master node readable controls for replication, approvals,
+          table management, and data queries. Every action uses clicks and friendly summaries.
+        </p>
+      </article>
+      <aside class="hero-meta">
+        <div class="status-card">
+          <span>Node role</span>
+          <strong id="roleBadge">Master</strong>
+        </div>
+        <div class="status-card">
+          <span>Health</span>
+          <strong id="healthBadge">Checking...</strong>
+        </div>
+        <div class="status-card">
+          <span>Database</span>
+          <strong id="dbBadge">Checking...</strong>
+        </div>
+      </aside>
+    </section>
+
+    <main class="layout">
+      <section class="panel span-8">
+        <h2>Cluster Status</h2>
+        <p class="intro">See registered slaves, health, and pending replication at a glance.</p>
+        <div class="actions">
+          <button class="primary" id="refreshCluster">Refresh Cluster</button>
+          <button class="secondary" id="retryReplication">Retry Pending Replication</button>
+        </div>
+        <div class="card-list" id="clusterCards"></div>
+      </section>
+
+      <section class="panel span-4">
+        <h2>Register Slave</h2>
+        <p class="intro">Add a slave manually if needed.</p>
+        <form id="registerSlaveForm">
+          <div class="form-grid">
+            <div class="field-full">
+              <label for="slaveId">Slave ID</label>
+              <input id="slaveId" name="id" placeholder="slave-2" required>
+            </div>
+            <div class="field-full">
+              <label for="slaveUrl">Slave URL</label>
+              <input id="slaveUrl" name="url" placeholder="http://192.168.1.20:8081" required>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary" type="submit">Register Slave</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel span-6">
+        <h2>Create Table</h2>
+        <p class="intro">Enter columns one per line using: <code>column_name TYPE</code>.</p>
+        <form id="createTableForm">
+          <div class="form-grid">
+            <div class="field-full">
+              <label for="createTableName">Table name</label>
+              <input id="createTableName" name="table" placeholder="users" required>
+            </div>
+            <div class="field-full">
+              <label for="createColumns">Columns</label>
+              <textarea id="createColumns" name="columns" placeholder="id INT PRIMARY KEY&#10;name VARCHAR(100)&#10;email VARCHAR(200)"></textarea>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary" type="submit">Create Table</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel span-6">
+        <h2>Danger Zone</h2>
+        <p class="intro">Use these actions carefully. They are irreversible database operations.</p>
+        <form id="dropTableForm">
+          <div class="form-grid">
+            <div class="field-full">
+              <label for="dropTableName">Table to drop</label>
+              <input id="dropTableName" name="table" placeholder="old_users" required>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="danger" type="submit">Drop Table</button>
+            <button class="warn" type="button" id="dropDatabaseButton">Drop Entire Database</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel span-7">
+        <h2>Data Operations</h2>
+        <p class="intro">Use one SQL box, then trigger the matching action button.</p>
+        <div class="field-full">
+          <label for="queryBox">SQL query</label>
+          <textarea id="queryBox" placeholder="SELECT * FROM users"></textarea>
+        </div>
+        <div class="actions">
+          <button class="primary" type="button" data-query-action="select">Run Select</button>
+          <button class="secondary" type="button" data-query-action="insert">Insert</button>
+          <button class="secondary" type="button" data-query-action="update">Update</button>
+          <button class="secondary" type="button" data-query-action="delete">Delete</button>
+        </div>
+      </section>
+
+      <section class="panel span-5">
+        <h2>Approval Queue</h2>
+        <p class="intro">Review pending write requests that came through slave nodes.</p>
+        <div class="actions">
+          <button class="primary" id="refreshApprovals">Refresh Requests</button>
+          <select id="approvalFilter">
+            <option value="pending">Pending only</option>
+            <option value="all">All requests</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="request-list" id="approvalList"></div>
+      </section>
+
+      <section class="panel span-12">
+        <h2>Results</h2>
+        <p class="intro">Operations are summarized here in readable status cards and tables.</p>
+        <div class="output" id="output"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

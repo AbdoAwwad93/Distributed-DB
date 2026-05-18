@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Distributed DB Slave</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body data-page="slave">
+  <div class="shell">
+    <section class="hero">
+      <article class="hero-card">
+        <div class="eyebrow">Slave Workspace</div>
+        <h1>Read locally, request writes, and promote when needed.</h1>
+        <p>
+          This page is tuned for slave nodes. Read queries run immediately here,
+          while write actions are sent through the master approval flow and shown as friendly messages.
+        </p>
+      </article>
+      <aside class="hero-meta">
+        <div class="status-card">
+          <span>Node role</span>
+          <strong id="roleBadge">Slave</strong>
+        </div>
+        <div class="status-card">
+          <span>Health</span>
+          <strong id="healthBadge">Checking...</strong>
+        </div>
+        <div class="status-card">
+          <span>Database</span>
+          <strong id="dbBadge">Checking...</strong>
+        </div>
+      </aside>
+    </section>
+
+    <main class="layout">
+      <section class="panel span-7">
+        <h2>Read And Write Queries</h2>
+        <p class="intro">Use buttons instead of memorizing endpoints. Writes go to the master for approval.</p>
+        <div class="field-full">
+          <label for="queryBox">SQL query</label>
+          <textarea id="queryBox" placeholder="SELECT * FROM users"></textarea>
+        </div>
+        <div class="actions">
+          <button class="primary" type="button" data-query-action="select">Run Select</button>
+          <button class="secondary" type="button" data-query-action="insert">Request Insert</button>
+          <button class="secondary" type="button" data-query-action="update">Request Update</button>
+          <button class="secondary" type="button" data-query-action="delete">Request Delete</button>
+        </div>
+      </section>
+
+      <section class="panel span-5">
+        <h2>Structure Changes</h2>
+        <p class="intro">Create or drop tables with forms. These requests also enter the master approval queue.</p>
+        <form id="createTableForm">
+          <div class="form-grid">
+            <div class="field-full">
+              <label for="createTableName">Table name</label>
+              <input id="createTableName" name="table" placeholder="users" required>
+            </div>
+            <div class="field-full">
+              <label for="createColumns">Columns</label>
+              <textarea id="createColumns" name="columns" placeholder="id INT PRIMARY KEY&#10;name VARCHAR(100)"></textarea>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary" type="submit">Request Create Table</button>
+          </div>
+        </form>
+
+        <form id="dropTableForm">
+          <div class="form-grid">
+            <div class="field-full">
+              <label for="dropTableName">Table to drop</label>
+              <input id="dropTableName" name="table" placeholder="users_archive" required>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="danger" type="submit">Request Drop Table</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel span-4">
+        <h2>Node Actions</h2>
+        <p class="intro">Check local status or promote this slave if the master is down.</p>
+        <div class="actions">
+          <button class="primary" id="refreshHealth">Refresh Health</button>
+          <button class="warn" id="promoteButton">Promote To Master</button>
+        </div>
+        <p class="hint">Promotion switches this node role immediately through the existing API.</p>
+      </section>
+
+      <section class="panel span-8">
+        <h2>Results</h2>
+        <p class="intro">Read output, approval confirmations, and errors appear here in a cleaner format.</p>
+        <div class="output" id="output"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

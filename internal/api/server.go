@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"distributed-db/internal/config"
+	"distributed-db/internal/api/web"
 	"distributed-db/internal/models"
 	"distributed-db/internal/replication"
 	"distributed-db/internal/storage"
@@ -77,6 +79,16 @@ func NewServer(cfg config.NodeConfig, store *storage.Store, broadcaster *replica
 		role:        cfg.Role,
 	}
 
+	staticFS, err := fs.Sub(web.Assets, ".")
+	if err != nil {
+		panic("failed to prepare embedded web assets: " + err.Error())
+	}
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+
+	mux.Handle("/static/", staticHandler)
+	mux.HandleFunc("/", server.handleRoot)
+	mux.HandleFunc("/master", server.handleMasterPage)
+	mux.HandleFunc("/slave", server.handleSlavePage)
 	mux.HandleFunc("/health", server.handleHealth)
 	mux.HandleFunc("/db/health", server.handleDBHealth)
 	mux.HandleFunc("/cluster/status", server.handleClusterStatus)
@@ -106,6 +118,48 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		Status: "ok",
 		Node:   s.currentRole(),
 	})
+}
+
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	if s.currentRole() == "master" {
+		http.Redirect(w, r, "/master", http.StatusTemporaryRedirect)
+		return
+	}
+
+	http.Redirect(w, r, "/slave", http.StatusTemporaryRedirect)
+}
+
+func (s *Server) handleMasterPage(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	s.servePage(w, "master.html")
+}
+
+func (s *Server) handleSlavePage(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	s.servePage(w, "slave.html")
+}
+
+func (s *Server) servePage(w http.ResponseWriter, name string) {
+	content, err := web.Assets.ReadFile(name)
+	if err != nil {
+		http.Error(w, "failed to load page", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
 }
 
 func (s *Server) handleDBHealth(w http.ResponseWriter, _ *http.Request) {
