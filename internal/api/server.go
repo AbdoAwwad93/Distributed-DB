@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"distributed-db/internal/config"
 	"distributed-db/internal/api/web"
+	"distributed-db/internal/config"
 	"distributed-db/internal/models"
 	"distributed-db/internal/replication"
 	"distributed-db/internal/storage"
@@ -93,6 +93,7 @@ func NewServer(cfg config.NodeConfig, store *storage.Store, broadcaster *replica
 	mux.HandleFunc("/db/health", server.handleDBHealth)
 	mux.HandleFunc("/cluster/status", server.handleClusterStatus)
 	mux.HandleFunc("/register-slave", server.handleRegisterSlave)
+	mux.HandleFunc("/replication/snapshot", server.handleReplicationSnapshot)
 	mux.HandleFunc("/approval-requests", server.handleApprovalRequests)
 	mux.HandleFunc("/approval-requests/", server.handleApprovalDecision)
 	mux.HandleFunc("/replication/retry", server.handleReplicationRetry)
@@ -225,6 +226,24 @@ func (s *Server) handleRegisterSlave(w http.ResponseWriter, r *http.Request) {
 		ID:      status.ID,
 		URL:     status.URL,
 	})
+}
+
+func (s *Server) handleReplicationSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.currentRole() != "master" {
+		http.Error(w, "replication snapshot is only available on master", http.StatusForbidden)
+		return
+	}
+
+	queries, err := s.store.ExportSnapshot()
+	if err != nil {
+		http.Error(w, "failed to export snapshot: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.SnapshotResponse{Queries: queries})
 }
 func (s *Server) handleReplicationRetry(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {

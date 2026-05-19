@@ -21,7 +21,7 @@ func main() {
 
 	server := api.NewServer(cfg, store, nil)
 	menu := console.NewMenu(cfg)
-	go cluster.RegisterSlaveLoop(cfg)
+	go cluster.RegisterSlaveLoop(cfg, store)
 
 	log.Printf("starting %s node %s on %s", cfg.Role, cfg.NodeID, cfg.Address())
 	go func() {

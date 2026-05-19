@@ -26,6 +26,10 @@ type RegisterSlaveResponse struct {
 	URL     string `json:"url"`
 }
 
+type SnapshotResponse struct {
+	Queries []string `json:"queries"`
+}
+
 type ApprovalSubmissionRequest struct {
 	Method      string `json:"method"`
 	Path        string `json:"path"`
