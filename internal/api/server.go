@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"distributed-db/internal/api/web"
+	"distributed-db/internal/cluster"
 	"distributed-db/internal/config"
 	"distributed-db/internal/models"
 	"distributed-db/internal/replication"
@@ -97,6 +98,7 @@ func NewServer(cfg config.NodeConfig, store *storage.Store, broadcaster *replica
 	mux.HandleFunc("/approval-requests", server.handleApprovalRequests)
 	mux.HandleFunc("/approval-requests/", server.handleApprovalDecision)
 	mux.HandleFunc("/replication/retry", server.handleReplicationRetry)
+	mux.HandleFunc("/replication/resync", server.handleReplicationResync)
 	mux.HandleFunc("/promote", server.handlePromote)
 	mux.HandleFunc("/create-table", server.handleCreateTable)
 	mux.HandleFunc("/drop-table", server.handleDropTable)
@@ -261,6 +263,27 @@ func (s *Server) handleReplicationRetry(w http.ResponseWriter, r *http.Request) 
 		Message:     "retry completed",
 		Replication: s.broadcaster.RetryPending(),
 	})
+}
+
+func (s *Server) handleReplicationResync(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if s.currentRole() == "master" {
+		http.Error(w, "replica resync is only available on slave nodes", http.StatusBadRequest)
+		return
+	}
+	if s.config.MasterURL == "" {
+		http.Error(w, "master URL is not configured for this slave", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := cluster.SyncReplicaFromMaster(s.masterHTTP, s.config, s.store); err != nil {
+		http.Error(w, "replica resync failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.MessageResponse{Message: "replica resynced from master"})
 }
 
 func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {

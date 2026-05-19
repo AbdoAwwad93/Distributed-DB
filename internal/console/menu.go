@@ -106,6 +106,8 @@ func (m *Menu) runSlaveChoice(choice string) bool {
 	case "6":
 		m.selectQuery()
 	case "7":
+		m.sendRequest(http.MethodPost, "/replication/resync", nil)
+	case "8":
 		m.sendRequest(http.MethodPut, "/promote", nil)
 		m.cfg.Role = "master"
 	case "0":
@@ -319,7 +321,8 @@ func (m *Menu) printMenu() {
 	fmt.Println("4. Update query")
 	fmt.Println("5. Delete query")
 	fmt.Println("6. Select query")
-	fmt.Println("7. Promote to master")
+	fmt.Println("7. Resync replica from master")
+	fmt.Println("8. Promote to master")
 	fmt.Println("0. Exit")
 }
 

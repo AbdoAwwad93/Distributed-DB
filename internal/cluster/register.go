@@ -45,7 +45,7 @@ func RegisterSlaveLoop(cfg config.NodeConfig, store *storage.Store) {
 				return
 			}
 
-			if err := syncReplicaFromMaster(client, cfg, store); err != nil {
+			if err := SyncReplicaFromMaster(client, cfg, store); err != nil {
 				log.Printf("slave bootstrap sync failed after registration: %v; retrying in 5s", err)
 			} else {
 				log.Printf("registered slave %s at %s with master %s and synced replica", payload.ID, payload.URL, cfg.MasterURL)
@@ -62,7 +62,7 @@ func RegisterSlaveLoop(cfg config.NodeConfig, store *storage.Store) {
 	}
 }
 
-func syncReplicaFromMaster(client *http.Client, cfg config.NodeConfig, store *storage.Store) error {
+func SyncReplicaFromMaster(client *http.Client, cfg config.NodeConfig, store *storage.Store) error {
 	endpoint := strings.TrimRight(cfg.MasterURL, "/") + "/replication/snapshot"
 	response, err := client.Get(endpoint)
 	if err != nil {

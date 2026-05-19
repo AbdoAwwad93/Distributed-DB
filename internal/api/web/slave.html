@@ -83,12 +83,13 @@
 
       <section class="panel span-4">
         <h2>Node Actions</h2>
-        <p class="intro">Check local status or promote this slave if the master is down.</p>
+        <p class="intro">Check local status, pull a fresh replica from the master, or promote this slave if the master is down.</p>
         <div class="actions">
           <button class="primary" id="refreshHealth">Refresh Health</button>
+          <button class="secondary" id="resyncReplica">Resync Replica</button>
           <button class="warn" id="promoteButton">Promote To Master</button>
         </div>
-        <p class="hint">Promotion switches this node role immediately through the existing API.</p>
+        <p class="hint">Resync replaces local replica tables with a fresh snapshot from the master. Promotion switches this node role immediately through the existing API.</p>
       </section>
 
       <section class="panel span-8">

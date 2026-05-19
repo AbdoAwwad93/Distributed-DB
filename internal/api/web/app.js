@@ -393,6 +393,24 @@
     }
   }
 
+  async function resyncReplica(button) {
+    const confirmed = window.confirm("Pull a fresh replica from the master and replace the local replica data?");
+    if (!confirmed) return;
+
+    setLoading(button, true);
+    try {
+      clearOutput();
+      const { data } = await request("/replication/resync", { method: "POST" });
+      addMessage("Replica resynced", data.message || "The slave pulled a fresh snapshot from the master.", "success");
+      await refreshHealth();
+    } catch (error) {
+      clearOutput();
+      addMessage("Resync failed", error.message || "The replica could not be refreshed from the master.", "error");
+    } finally {
+      setLoading(button, false);
+    }
+  }
+
   async function refreshApprovals(button) {
     setLoading(button, !!button);
     const list = document.getElementById("approvalList");
@@ -494,6 +512,7 @@
     document.getElementById("createTableForm")?.addEventListener("submit", handleCreateTable);
     document.getElementById("dropTableForm")?.addEventListener("submit", handleDropTable);
     document.getElementById("refreshHealth")?.addEventListener("click", refreshHealth);
+    document.getElementById("resyncReplica")?.addEventListener("click", () => resyncReplica(document.getElementById("resyncReplica")));
     document.getElementById("promoteButton")?.addEventListener("click", () => promoteNode(document.getElementById("promoteButton")));
   }
 
